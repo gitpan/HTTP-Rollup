@@ -11,7 +11,9 @@ use vars qw($VERSION @ISA @EXPORT_OK);
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(RollupQueryString);
 
-$VERSION = '0.4';
+$VERSION = '0.5';
+
+my $DEFAULT_DELIMITER = ";";
 
 =head1 NAME
 
@@ -25,6 +27,9 @@ HTTP::Rollup - translate an HTTP query string to a hierarchical structure
 
  my $hashref = HTTP::Rollup::RollupQueryString($query_string,
                                               { FORCE_LIST => 1 });
+
+ my $hashref = HTTP::Rollup::RollupQueryString($query_string,
+                                              { DELIM => "&" });
 
 =head1 DESCRIPTION
 
@@ -77,6 +82,11 @@ e.g. with the above example:
 The FORCE_LIST switch causes CGI.pm-style behavior, as above,
 for backward compatibility.
 
+The DELIM option specifies the input field delimiter.  This is not
+auto-detected.  Default is semicolon, which should be used by most
+current browsers.  Older browsers may use ampersand instead.  Specifying
+"\n" for the delimiter is helpful for parsing input files.
+
 If no $query_string parameter is provided, it will attempt to find the
 input in the same manner used by CGI.pm.  Supports running under CGI
 or mod_perl context, and from the command line (reads from @ARGV or stdin).
@@ -107,6 +117,12 @@ use lib "./blib/lib";
 use HTTP::Rollup qw(RollupQueryString);
 use Data::Dumper;
 
+my $s1 = "one=abc;two=def;three=ghi";
+my $hr = RollupQueryString($s1); # default delimiter
+ok ($hr->{one} eq "abc");
+ok ($hr->{two} eq "def");
+ok ($hr->{three} eq "ghi");
+
 my $string = <<_END_;
 employee.name.first=Jane
 employee.name.last=Smith
@@ -118,7 +134,7 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = RollupQueryString($string);
+my $hashref = RollupQueryString($string, DELIM => ";");
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -132,7 +148,7 @@ ok($hashref->{fax}->[0] eq "(212)999-8877",
 
 my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
 
-$hashref = RollupQueryString($string2);
+$hashref = RollupQueryString($string2, DELIM => "&");
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",
@@ -142,7 +158,7 @@ ok($hashref->{phone}->[1] eq "(212)555-1212",
 ok($hashref->{fax}->[0] eq "(212)999-8877",
    "\@-list");
 
-my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1 });
+my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1, DELIM => "\n" });
 ok($hashref2->{'employee.name.first'}->[0] eq "Jane",
    "nested scalar");
 ok($hashref2->{id}->[0] eq "444",
@@ -159,6 +175,8 @@ ok($hashref2->{'@fax'}->[0] eq "(212)999-8877",
 sub RollupQueryString {
     my ($input, $config) = @_;
 
+    my $delimiter = $config->{DELIM} || $DEFAULT_DELIMITER;
+
     if (!defined $input) {
 	$input = _query_string();
     }
@@ -167,8 +185,8 @@ sub RollupQueryString {
 
     return $root if !$input;
 
-    # query strings are name-value pairs delimited by & or by newline
-    foreach my $nvp (split(/[\n&]/, $input)) {
+    # query strings are name-value pairs delimited by & or by newline or semicolon
+    foreach my $nvp (split(/$delimiter/, $input)) {
 	last if $nvp eq "=";	# sometimes appears as query string terminator
 
       PARSE:

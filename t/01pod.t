@@ -33,11 +33,17 @@ tie *STDERR, 'Catch', '_STDERR_' or die $!;
 {
     undef $main::_STDOUT_;
     undef $main::_STDERR_;
-#line 105 Rollup.pm
+#line 107 Rollup.pm
 
 use lib "./blib/lib";
 use HTTP::Rollup qw(RollupQueryString);
 use Data::Dumper;
+
+my $s1 = "one=abc;two=def;three=ghi";
+my $hr = RollupQueryString($s1); # default delimiter
+ok ($hr->{one} eq "abc");
+ok ($hr->{two} eq "def");
+ok ($hr->{three} eq "ghi");
 
 my $string = <<_END_;
 employee.name.first=Jane
@@ -50,7 +56,7 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = RollupQueryString($string);
+my $hashref = RollupQueryString($string, DELIM => ";");
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -64,7 +70,7 @@ ok($hashref->{fax}->[0] eq "(212)999-8877",
 
 my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
 
-$hashref = RollupQueryString($string2);
+$hashref = RollupQueryString($string2, DELIM => "&");
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",
@@ -74,7 +80,7 @@ ok($hashref->{phone}->[1] eq "(212)555-1212",
 ok($hashref->{fax}->[0] eq "(212)999-8877",
    "\@-list");
 
-my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1 });
+my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1, DELIM => "\n" });
 ok($hashref2->{'employee.name.first'}->[0] eq "Jane",
    "nested scalar");
 ok($hashref2->{id}->[0] eq "444",

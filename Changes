@@ -1,5 +1,8 @@
 Revision history for Perl module HTTP::Rollup
 
+0.4   13 Aug 2002
+	* distribute with test cases extracted from pod
+
 0.3   13 Aug 2002
         - copied some stuff from CGI.pm and shellwords.pl, with
 	  some local revisions.

@@ -11,7 +11,7 @@ use vars qw($VERSION @ISA @EXPORT_OK);
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(RollupQueryString);
 
-$VERSION = '0.3';
+$VERSION = '0.4';
 
 =head1 NAME
 
@@ -42,22 +42,22 @@ Given input text of the format:
 Construct an output data structure like this:
 
   $hashref = {
-    $employee => {
+    employee => {
 		  name => {
 			   "first" => "Jane",
 			   "last" => "Smith",
 			  },
 		  address => "123 Main St.",
 		  city => "New York"
-		 },
-    $phone => [
+		},
+    phone => [
 	       "(212)123-4567",
 	       "(212)555-1212"
-	      ],
-    $fax => [
+	     ],
+    fax => [
 	     "(212)999-8877"
-	    ],
-    $id => 444
+	   ],
+    id => 444
   };
 
 This is intended as a drop-in replacement for the HTTP query string

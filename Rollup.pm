@@ -11,7 +11,7 @@ use vars qw($VERSION @ISA @EXPORT_OK);
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(RollupQueryString);
 
-$VERSION = '0.5';
+$VERSION = '0.6';
 
 my $DEFAULT_DELIMITER = ";";
 
@@ -134,7 +134,7 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = RollupQueryString($string, DELIM => ";");
+my $hashref = RollupQueryString($string, { DELIM => "\n" });
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -148,7 +148,7 @@ ok($hashref->{fax}->[0] eq "(212)999-8877",
 
 my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
 
-$hashref = RollupQueryString($string2, DELIM => "&");
+$hashref = RollupQueryString($string2, { DELIM => "&" });
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",
@@ -359,7 +359,7 @@ Jason W. May <jmay@pobox.com>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002 Jason W. May.  All rights reserved.
+Copyright (C) 2002,2003 Jason W. May.  All rights reserved.
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 

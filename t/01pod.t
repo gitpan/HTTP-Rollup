@@ -33,7 +33,7 @@ tie *STDERR, 'Catch', '_STDERR_' or die $!;
 {
     undef $main::_STDOUT_;
     undef $main::_STDERR_;
-#line 107 Rollup.pm
+#line 115 Rollup.pm
 
 use lib "./blib/lib";
 use HTTP::Rollup qw(RollupQueryString);
@@ -56,7 +56,7 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = RollupQueryString($string, DELIM => ";");
+my $hashref = RollupQueryString($string, { DELIM => "\n" });
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -70,7 +70,7 @@ ok($hashref->{fax}->[0] eq "(212)999-8877",
 
 my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
 
-$hashref = RollupQueryString($string2, DELIM => "&");
+$hashref = RollupQueryString($string2, { DELIM => "&" });
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",

@@ -1,5 +1,8 @@
 Revision history for Perl module HTTP::Rollup
 
+0.6    14 Aug 2003
+	* fixed errors in pod test
+
 0.5    7 Aug 2003
 	* DELIM config option for input field separator; default is semicolon
 	* updated 01pod.t

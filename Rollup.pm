@@ -11,9 +11,9 @@ use vars qw($VERSION @ISA @EXPORT_OK);
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(RollupQueryString);
 
-$VERSION = '0.6';
+$VERSION = '0.7';
 
-my $DEFAULT_DELIMITER = ";";
+my $DEFAULT_DELIMITER = "&";
 
 =head1 NAME
 
@@ -23,13 +23,9 @@ HTTP::Rollup - translate an HTTP query string to a hierarchical structure
 
  use HTTP::Rollup qw(RollupQueryString);
 
- my $hashref = HTTP::Rollup::RollupQueryString($query_string);
+ my $rollup = new HTTP::Rollup;
 
- my $hashref = HTTP::Rollup::RollupQueryString($query_string,
-                                              { FORCE_LIST => 1 });
-
- my $hashref = HTTP::Rollup::RollupQueryString($query_string,
-                                              { DELIM => "&" });
+ my $hashref = $rollup->RollupQueryString($query_string);
 
 =head1 DESCRIPTION
 
@@ -66,8 +62,10 @@ Construct an output data structure like this:
   };
 
 This is intended as a drop-in replacement for the HTTP query string
-parsing implemented in CGI.pm.  CGI.pm constructs purely flat structures,
-e.g. with the above example:
+parsing implemented in CGI.pm, adding the ability to assemble a nested
+data structure (CGI.pm constructs purely flat structures).
+
+e.g. given the sample input above, CGI.pm would produce:
 
   $hashref = {
     "employee.name.first" => [ "Jason" ],
@@ -79,17 +77,12 @@ e.g. with the above example:
     "id" => [ 444 ]
   };
 
-The FORCE_LIST switch causes CGI.pm-style behavior, as above,
-for backward compatibility.
+If no $query_string parameter is provided, HTTP::Rollup will attempt to find
+the input in the same manner used by CGI.pm (the internal _query_string
+function is pretty much cloned from CGI.pm).
 
-The DELIM option specifies the input field delimiter.  This is not
-auto-detected.  Default is semicolon, which should be used by most
-current browsers.  Older browsers may use ampersand instead.  Specifying
-"\n" for the delimiter is helpful for parsing input files.
-
-If no $query_string parameter is provided, it will attempt to find the
-input in the same manner used by CGI.pm.  Supports running under CGI
-or mod_perl context, and from the command line (reads from @ARGV or stdin).
+HTTP::Rollup runs under both CGI or mod_perl contexts, and from the
+command line (reads from @ARGV or stdin).
 
 =head1 FEATURES
 
@@ -111,14 +104,33 @@ element list).  The @ will be stripped.
 
 =back
 
+=head1 FUNCTIONS
+
+=item new([ FORCE_LIST => 1 ], [ DELIM => ";" ])
+
+The FORCE_LIST switch causes CGI.pm-style behavior, as above,
+for backward compatibility.
+
+The DELIM option specifies the input field delimiter.  This is not
+auto-detected.  Default is the standard ampersand, though semicolon has
+been proposed as a replacement to avoid conflict with the ampersand used
+for character entities.
+
+Specifying "\n" for the delimiter is helpful for parsing parameters on stdin.
+
+=item RollupQueryString()
+
+Workhorse function.
+
 =begin testing
 
 use lib "./blib/lib";
 use HTTP::Rollup qw(RollupQueryString);
 use Data::Dumper;
 
-my $s1 = "one=abc;two=def;three=ghi";
-my $hr = RollupQueryString($s1); # default delimiter
+my $s1 = "one=abc&two=def&three=ghi";
+my $r1 = new HTTP::Rollup;
+my $hr = $r1->RollupQueryString($s1); # default delimiter
 ok ($hr->{one} eq "abc");
 ok ($hr->{two} eq "def");
 ok ($hr->{three} eq "ghi");
@@ -134,7 +146,8 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = RollupQueryString($string, { DELIM => "\n" });
+my $r2 = new HTTP::Rollup(DELIM => "\n");
+my $hashref = $r2->RollupQueryString($string);
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -146,9 +159,10 @@ ok($hashref->{phone}->[1] eq "(212)555-1212",
 ok($hashref->{fax}->[0] eq "(212)999-8877",
    "\@-list");
 
-my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
+my $string2 = "employee.name.first=Jane;employee.name.last=Smith;employee.address=123%20Main%20St.;employee.city=New%York;id=444;phone=(212)123-4567;phone=(212)555-1212;\@fax=(212)999-8877";
 
-$hashref = RollupQueryString($string2, { DELIM => "&" });
+my $r3 = new HTTP::Rollup(DELIM => ";");
+$hashref = $r3->RollupQueryString($string2);
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",
@@ -158,7 +172,8 @@ ok($hashref->{phone}->[1] eq "(212)555-1212",
 ok($hashref->{fax}->[0] eq "(212)999-8877",
    "\@-list");
 
-my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1, DELIM => "\n" });
+my $r4 = new HTTP::Rollup(FORCE_LIST => 1, DELIM => "\n");
+my $hashref2 = $r4->RollupQueryString($string);
 ok($hashref2->{'employee.name.first'}->[0] eq "Jane",
    "nested scalar");
 ok($hashref2->{id}->[0] eq "444",
@@ -172,10 +187,34 @@ ok($hashref2->{'@fax'}->[0] eq "(212)999-8877",
 
 =cut
 
-sub RollupQueryString {
-    my ($input, $config) = @_;
+my %legal_parameters = (
+			FORCE_LIST => 1,
+			DELIM => 1,
+		       );
+sub new {
+    my $cl  = shift;
+    my $class = ref($cl) || $cl;
+    my %params = @_;
 
-    my $delimiter = $config->{DELIM} || $DEFAULT_DELIMITER;
+    my $self = {};
+    bless $self, $class;
+
+    for my $param (keys %params) {
+	if ($legal_parameters{$param}) {
+	    $self->{$param} = $params{$param};
+	} else {
+	    print STDERR __PACKAGE__, ": illegal config parameter $param\n";
+	}
+    }
+
+    return $self;
+}
+
+sub RollupQueryString {
+    my $self = shift;
+    my $input = shift;
+
+    my $delimiter = $self->{DELIM} || $DEFAULT_DELIMITER;
 
     if (!defined $input) {
 	$input = _query_string();
@@ -194,7 +233,7 @@ sub RollupQueryString {
 	my @levels = split /\./, $name;
 	$value = CGI::Util::unescape($value);
 
-	if ($config->{FORCE_LIST}) {
+	if ($self->{FORCE_LIST}) {
 	    # always use a list, for CGI.pm-style behavior
 	    if (ref $root->{$name}) {
 		# there's already a list there
@@ -242,10 +281,10 @@ sub RollupQueryString {
 # alterations (e.g. support for PUT).
 
 sub _query_string {
-    my $meth = $ENV{'REQUEST_METHOD'};
+    my $meth = $ENV{'REQUEST_METHOD'} || "null";
     my $query_string;
 
-    if ($meth =~ /^(GET|HEAD)$/) {
+    if ($meth =~ /^(GET|HEAD)$/o) {
 	if (exists $ENV{MOD_PERL}) {
 	    # mod_perl
 	    return Apache->request->args;

@@ -4,15 +4,22 @@ require 5.005;
 
 use strict;
 use CGI::Util qw( unescape );
-use vars qw($VERSION);
+use Exporter;
 
-$VERSION = '0.2';
+use vars qw($VERSION @ISA @EXPORT_OK);
+
+@ISA = qw(Exporter);
+@EXPORT_OK = qw(RollupQueryString);
+
+$VERSION = '0.3';
 
 =head1 NAME
 
-HTTP::Rollup - translate an HTTP query string to a hierarchal structure
+HTTP::Rollup - translate an HTTP query string to a hierarchical structure
 
 =head1 SYNOPSIS
+
+ use HTTP::Rollup qw(RollupQueryString);
 
  my $hashref = HTTP::Rollup::RollupQueryString($query_string);
 
@@ -70,6 +77,10 @@ e.g. with the above example:
 The FORCE_LIST switch causes CGI.pm-style behavior, as above,
 for backward compatibility.
 
+If no $query_string parameter is provided, it will attempt to find the
+input in the same manner used by CGI.pm.  Supports running under CGI
+or mod_perl context, and from the command line (reads from @ARGV or stdin).
+
 =head1 FEATURES
 
 =over
@@ -93,7 +104,7 @@ element list).  The @ will be stripped.
 =begin testing
 
 use lib "./blib/lib";
-use HTTP::Rollup;
+use HTTP::Rollup qw(RollupQueryString);
 use Data::Dumper;
 
 my $string = <<_END_;
@@ -107,7 +118,7 @@ phone=(212)555-1212
 \@fax=(212)999-8877
 _END_
 
-my $hashref = HTTP::Rollup::RollupQueryString($string);
+my $hashref = RollupQueryString($string);
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "2-nested scalar");
 ok($hashref->{employee}->{city} eq "New York",
@@ -121,7 +132,7 @@ ok($hashref->{fax}->[0] eq "(212)999-8877",
 
 my $string2 = "employee.name.first=Jane&employee.name.last=Smith&employee.address=123%20Main%20St.&employee.city=New%York&id=444&phone=(212)123-4567&phone=(212)555-1212&\@fax=(212)999-8877";
 
-$hashref = HTTP::Rollup::RollupQueryString($string2);
+$hashref = RollupQueryString($string2);
 ok($hashref->{employee}->{name}->{first} eq "Jane",
    "nested scalar");
 ok($hashref->{id} eq "444",
@@ -131,7 +142,7 @@ ok($hashref->{phone}->[1] eq "(212)555-1212",
 ok($hashref->{fax}->[0] eq "(212)999-8877",
    "\@-list");
 
-my $hashref2 = HTTP::Rollup::RollupQueryString($string, { FORCE_LIST => 1 });
+my $hashref2 = RollupQueryString($string, { FORCE_LIST => 1 });
 ok($hashref2->{'employee.name.first'}->[0] eq "Jane",
    "nested scalar");
 ok($hashref2->{id}->[0] eq "444",
@@ -147,6 +158,10 @@ ok($hashref2->{'@fax'}->[0] eq "(212)999-8877",
 
 sub RollupQueryString {
     my ($input, $config) = @_;
+
+    if (!defined $input) {
+	$input = _query_string();
+    }
 
     my $root = {};
 
@@ -201,6 +216,121 @@ sub RollupQueryString {
     }
 
     return $root;
+}
+
+
+# Most of the following was copied from CGI.pm (some version <2.8).
+# Frozen here to avoid breakage on CGI changes, and to allow local
+# alterations (e.g. support for PUT).
+
+sub _query_string {
+    my $meth = $ENV{'REQUEST_METHOD'};
+    my $query_string;
+
+    if ($meth =~ /^(GET|HEAD)$/) {
+	if (exists $ENV{MOD_PERL}) {
+	    # mod_perl
+	    return Apache->request->args;
+	} else {
+	    return $ENV{QUERY_STRING} ||  $ENV{REDIRECT_QUERY_STRING};
+	}
+    } else {
+	my $content_length = $ENV{CONTENT_LENGTH} || 0;
+
+	_read_from_client(\*STDIN,
+			  \$query_string,
+			  $content_length,
+			  0)
+	      if $content_length > 0;
+
+	  # Some people want to have their cake and eat it too!
+	  # Uncomment this line to have the contents of the query string
+	  # APPENDED to the POST data.
+	if ($ENV{QUERY_STRING}) {
+	    $query_string .= (length($query_string) ? '&' : '') . $ENV{QUERY_STRING};
+	}
+	return $query_string;
+    }
+
+    return _read_from_cmdline();
+}
+
+sub _read_from_client {
+    my($fh, $buff, $len, $offset) = @_;
+    local $^W=0;                # prevent a warning
+    return undef unless defined($fh);
+    return read($fh, $$buff, $len, $offset);
+}
+
+sub _read_from_cmdline {
+    my($input,@words);
+    my($query_string);
+
+    if (@ARGV) {
+	@words = @ARGV;
+    } else {
+	my @lines;
+	chomp(@lines = <STDIN>); # remove newlines
+	$input = join(" ",@lines);
+	@words = _shellwords($input);    
+    }
+    foreach (@words) {
+	s/\\=/%3D/g;
+	s/\\&/%26/g;	    
+    }
+
+    if ("@words"=~/=/) {
+	$query_string = join('&',@words);
+    } else {
+	$query_string = join('+',@words);
+    }
+    return $query_string;
+}
+
+# Taken from shellwords.pl in the Perl 5.6 distribution.
+#
+# Usage:
+#	@words = &shellwords($line);
+#	or
+#	@words = &shellwords(@lines);
+#	or
+#	@words = &shellwords;		# defaults to $_ (and clobbers it)
+
+sub _shellwords {
+    local ($_) = join('', @_) if @_;
+    my (@words, $snippet, $field);
+
+    s/^\s+//;
+    if ($_ ne '') {
+	$field = '';
+	for (;;) {
+	    if (s/^"(([^"\\]|\\.)*)"//) {
+		($snippet = $1) =~ s#\\(.)#$1#g;
+	    }
+	    elsif (/^"/) {
+		die "Unmatched double quote: $_\n";
+	    }
+	    elsif (s/^'(([^'\\]|\\.)*)'//) {
+		($snippet = $1) =~ s#\\(.)#$1#g;
+	    }
+	    elsif (/^'/) {
+		die "Unmatched single quote: $_\n";
+	    }
+	    elsif (s/^\\(.)//) {
+		$snippet = $1;
+	    }
+	    elsif (s/^([^\s\\'"]+)//) {
+		$snippet = $1;
+	    }
+	    else {
+		s/^\s+//;
+		last;
+	    }
+	    $field .= $snippet;
+	}
+	push(@words, $field);
+    }
+    @words;
 }
 
 1;

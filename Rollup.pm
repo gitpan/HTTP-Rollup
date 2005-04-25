@@ -11,9 +11,22 @@ use vars qw($VERSION @ISA @EXPORT_OK);
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(RollupQueryString);
 
-$VERSION = '0.7';
+$VERSION = '0.8';
 
 my $DEFAULT_DELIMITER = "&";
+
+# Turn on special checking for Doug MacEachern's modperl
+my $MOD_PERL = 0;
+if (exists $ENV{MOD_PERL}) {
+    if ($ENV{MOD_PERL_API_VERSION} == 2) {
+        $MOD_PERL = 2;
+        require Apache2::RequestUtil;
+        require APR::Table;
+    } else {
+        $MOD_PERL = 1;
+        require Apache;
+    }
+}
 
 =head1 NAME
 
@@ -281,35 +294,42 @@ sub RollupQueryString {
 # alterations (e.g. support for PUT).
 
 sub _query_string {
-    my $meth = $ENV{'REQUEST_METHOD'} || "null";
+    my $meth = $ENV{'REQUEST_METHOD'};
     my $query_string;
 
-    if ($meth =~ /^(GET|HEAD)$/o) {
-	if (exists $ENV{MOD_PERL}) {
-	    # mod_perl
-	    return Apache->request->args;
-	} else {
-	    return $ENV{QUERY_STRING} ||  $ENV{REDIRECT_QUERY_STRING};
-	}
-    } else {
-	my $content_length = $ENV{CONTENT_LENGTH} || 0;
+    if (!defined $meth) {
+	# no REQUEST_METHOD, so must be command-line usage
 
-	_read_from_client(\*STDIN,
-			  \$query_string,
-			  $content_length,
-			  0)
-	      if $content_length > 0;
-
-	  # Some people want to have their cake and eat it too!
-	  # Uncomment this line to have the contents of the query string
-	  # APPENDED to the POST data.
-	if ($ENV{QUERY_STRING}) {
-	    $query_string .= (length($query_string) ? '&' : '') . $ENV{QUERY_STRING};
-	}
-	return $query_string;
+	return _read_from_cmdline();
     }
 
-    return _read_from_cmdline();
+    if ($meth =~ /^(GET|HEAD)$/o) {
+	if ($MOD_PERL == 1) {
+	    return Apache->request->args;
+	} elsif ($MOD_PERL ==2) {
+	    return Apache2::RequestUtil->request->args;
+	} else {
+	    # CGI mode, not mod_perl
+	    return $ENV{QUERY_STRING} ||  $ENV{REDIRECT_QUERY_STRING};
+	}
+    }
+
+    # this is a POST
+
+    my $content_length = $ENV{CONTENT_LENGTH} || 0;
+
+    _read_from_client(\*STDIN,
+		      \$query_string,
+		      $content_length,
+		      0)
+      if $content_length > 0;
+
+    # Have our cake and eat it too! (see CGI.pm)
+    # Append query string contents to the POST data.
+    if ($ENV{QUERY_STRING}) {
+	$query_string .= (length($query_string) ? '&' : '') . $ENV{QUERY_STRING};
+    }
+    return $query_string;
 }
 
 sub _read_from_client {
@@ -318,6 +338,9 @@ sub _read_from_client {
     return undef unless defined($fh);
     return read($fh, $$buff, $len, $offset);
 }
+
+# Note: multiple parameters on cmdline are always linked with ampersand;
+# so better not change DELIM for this input style.
 
 sub _read_from_cmdline {
     my($input,@words);
@@ -341,6 +364,7 @@ sub _read_from_cmdline {
     } else {
 	$query_string = join('+',@words);
     }
+
     return $query_string;
 }
 
@@ -398,7 +422,7 @@ Jason W. May <jmay@pobox.com>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002,2003 Jason W. May.  All rights reserved.
+Copyright (C) 2002-2005 Jason W. May.  All rights reserved.
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 

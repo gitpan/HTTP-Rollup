@@ -1,6 +1,10 @@
 Revision history for Perl module HTTP::Rollup
 
-0.7    28 Sug 2003
+0.8    25 Apr 2005
+	* bug fix: wasn't handling command-line input correctly
+	* supports mod_perl2
+
+0.7    28 Aug 2003
 	* OO style, with config options specified in new()
 	* default DELIM should be &, not ;
 	* updated test cases
